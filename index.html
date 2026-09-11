@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Asistente Exámenes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white; 
+            min-height: 100vh;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { 
+            font-size: 24px; 
+            margin: 10px 0;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        #videoContainer {
+            width: 100%;
+            max-width: 900px;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            margin: 10px 0;
+            background: #000;
+        }
+        #video { 
+            width: 100%; 
+            display: block;
+        }
+        #canvas { display: none; }
+        
+        .controls { 
+            display: flex; 
+            gap: 15px; 
+            margin: 15px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button { 
+            padding: 15px 30px; 
+            font-size: 16px; 
+            font-weight: bold;
+            border: none; 
+            border-radius: 50px; 
+            cursor: pointer; 
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        button:active { transform: scale(0.95); }
+        #startBtn { background: #00d084; color: #000; }
+        #stopBtn { background: #ff4757; color: white; }
+        button:disabled { 
+            background: #555; 
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #status { 
+            margin: 15px 0; 
+            padding: 20px; 
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px; 
+            width: 100%; 
+            max-width: 900px;
+            min-height: 150px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        #status p {
+            font-size: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .result-box {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 10px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .answer { 
+            font-size: 20px; 
+            font-weight: bold;
+            color: #00ff88; 
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(0,255,136,0.1);
+            border-left: 4px solid #00ff88;
+            border-radius: 5px;
+        }
+        .timer {
+            font-size: 18px;
+            color: #ffd93d;
+            margin: 10px 0;
+        }
+        .settings {
+            margin: 10px 0;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            width: 100%;
+            max-width: 900px;
+        }
+        .settings label {
+            display: block;
+            margin: 10px 0 5px;
+            font-size: 14px;
+        }
+        .settings input, .settings select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            font-size: 16px;
+        }
+        @media (max-width: 600px) {
+            h1 { font-size: 20px; }
+            button { padding: 12px 24px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <h1>📸 Asistente de Exámenes</h1>
+    
+    <div class="settings">
+        <label>⏱️ Intervalo (segundos):</label>
+        <input type="number" id="intervalo" value="40" min="10" max="300">
+        
+        <label>🔊 Volumen:</label>
+        <select id="volumen">
+            <option value="0.5">Bajo</option>
+            <option value="1" selected>Normal</option>
+            <option value="1.5">Alto</option>
+        </select>
+    </div>
+    
+    <div id="videoContainer">
+        <video id="video" autoplay playsinline></video>
+    </div>
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls">
+        <button id="startBtn">▶️ Iniciar</button>
+        <button id="stopBtn" disabled>⏹️ Detener</button>
+        <button id="captureBtn">📸 Captura Manual</button>
+    </div>
+    
+    <div id="status">
+        <p>📱 Estado: Listo para iniciar</p>
+        <div id="timer" class="timer"></div>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        const timerDisplay = document.getElementById('timer');
+        const intervaloInput = document.getElementById('intervalo');
+        const volumenSelect = document.getElementById('volumen');
+        
+        let stream = null;
+        let intervalId = null;
+        let countdownId = null;
+        let countdown = 0;
+        
+        // ⚠️ REEMPLAZA ESTO CON TU NUEVA API KEY
+        const API_KEY = 'AQ.Ab8RN6KmkdQBcRDTeNGvMXsE83QqAOJCyfen7gJFov3kst0Ysw';
+        
+        // Solicitar permisos y iniciar cámara
+        async function startCamera() {
+            try {
+                updateStatus('📷 Solicitando permisos de cámara...');
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: { exact: 'environment' },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                });
+                
+                video.srcObject = stream;
+                await video.play();
+                
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                captureBtn.disabled = false;
+                
+                updateStatus('✅ Cámara activa. Iniciando ciclo automático...');
+                
+                // Primera captura inmediata
+                await captureAndAnalyze();
+                
+                // Iniciar ciclo automático
+                startAutoCycle();
+                
+            } catch (err) {
+                console.error('Error cámara:', err);
+                if (err.name === 'NotAllowedError') {
+                    updateStatus('❌ Permiso de cámara denegado. Por favor permite el acceso.');
+                } else if (err.name === 'NotFoundError') {
+                    updateStatus('❌ No se encontró cámara trasera. Usa un celular con cámara dual.');
+                } else {
+                    updateStatus('❌ Error: ' + err.message);
+                }
+            }
+        }
+        
+        function startAutoCycle() {
+            const intervalo = parseInt(intervaloInput.value) * 1000;
+            
+            // Countdown inicial
+            countdown = parseInt(intervaloInput.value);
+            updateCountdown();
+            
+            intervalId = setInterval(async () => {
+                await captureAndAnalyze();
+                countdown = parseInt(intervaloInput.value);
+            }, intervalo);
+            
+            // Actualizar countdown cada segundo
+            countdownId = setInterval(() => {
+                countdown--;
+                updateCountdown();
+            }, 1000);
+        }
+        
+        function updateCountdown() {
+            if (countdown > 0) {
+                timerDisplay.textContent = `⏱️ Siguiente captura en: ${countdown}s`;
+            } else {
+                timerDisplay.textContent = '⏱️ Capturando...';
+            }
+        }
+        
+        // Capturar y analizar
+        async function captureAndAnalyze() {
+            try {
+                updateStatus('📸 Capturando imagen...');
+                
+                // Ajustar canvas al tamaño del video
+                canvas.width = video.videoWidth || 1920;
+                canvas.height = video.videoHeight || 1080;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Convertir a base64 (calidad 0.7 para velocidad)
+                const imageData = canvas.toDataURL('image/jpeg', 0.7);
+                
+                updateStatus(' Analizando con IA...');
+                
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [{
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `Eres un asistente experto en exámenes. Analiza esta imagen:
+
+INSTRUCCIONES:
+1. Identifica la MATERIA (texto centrado arriba)
+2. Extrae el NÚMERO DE REACTIVO
+3. Copia la PREGUNTA completa
+4. Extrae las 4 OPCIONES de respuesta (A, B, C, D)
+5. Determina la RESPUESTA CORRECTA con base en conocimiento académico
+
+FORMATO DE RESPUESTA (sé conciso):
+📚 MATERIA: [nombre]
+🔢 REACTIVO: [número]
+❓ PREGUNTA: [texto completo]
+
+📝 OPCIONES:
+A) [opción A]
+B) [opción B]
+C) [opción C]
+D) [opción D]
+
+✅ RESPUESTA CORRECTA: [Letra] - [texto de la respuesta]
+
+💡 EXPLICACIÓN: [1-2 líneas justificando por qué es correcta]`
+                                },
+                                {
+                                    type: 'image_url',
+                                    image_url: { 
+                                        url: imageData,
+                                        detail: 'high'
+                                    }
+                                }
+                            ]
+                        }],
+                        max_tokens: 400,
+                        temperature: 0.3
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error?.message || 'Error en API');
+                }
+                
+                const data = await response.json();
+                const analysis = data.choices[0].message.content;
+                
+                updateStatus('✅ ¡Respuesta encontrada!');
+                result.innerHTML = `<div class="result-box">${formatResult(analysis)}</div>`;
+                
+                // Extraer y leer respuesta
+                const match = analysis.match(/✅ RESPUESTA CORRECTA:\s*([A-D])\s*-\s*(.+)/i);
+                if (match) {
+                    const letter = match[1];
+                    const text = match[2].trim();
+                    speakAnswer(`Respuesta correcta: ${letter}. ${text}`);
+                }
+                
+            } catch (err) {
+                console.error('Error:', err);
+                updateStatus(`❌ Error: ${err.message}`);
+            }
+        }
+        
+        function formatResult(text) {
+            return text
+                .replace(/📚/g, '<br>')
+                .replace(/🔢/g, '<br>🔢')
+                .replace(/❓/g, '<br>')
+                .replace(/📝/g, '<br>📝')
+                .replace(/✅/g, '<br><br>✅')
+                .replace(/💡/g, '<br><br>💡')
+                .replace(/\n/g, '<br>');
+        }
+        
+        // Texto a voz
+        function speakAnswer(text) {
+            if ('speechSynthesis' in window) {
+                // Cancelar cualquier audio previo
+                speechSynthesis.cancel();
+                
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'es-MX';
+                utterance.rate = 1.1;
+                utterance.pitch = 1;
+                utterance.volume = parseFloat(volumenSelect.value);
+                
+                // Intentar usar voz en español
+                const voices = speechSynthesis.getVoices();
+                const spanishVoice = voices.find(v => v.lang.includes('es'));
+                if (spanishVoice) {
+                    utterance.voice = spanishVoice;
+                }
+                
+                speechSynthesis.speak(utterance);
+            }
+        }
+        
+        function updateStatus(msg) {
+            const spinner = intervalId ? '<span class="spinner"></span>' : '';
+            status.querySelector('p').innerHTML = `${spinner} ${msg}`;
+        }
+        
+        function stopAll() {
+            if (intervalId) clearInterval(intervalId);
+            if (countdownId) clearInterval(countdownId);
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            speechSynthesis.cancel();
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            captureBtn.disabled = true;
+            timerDisplay.textContent = '';
+            updateStatus('️ Detenido. Presiona Iniciar para comenzar.');
+        }
+        
+        // Event listeners
+        startBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopAll);
+        captureBtn.addEventListener('click', () => {
+            captureBtn.disabled = true;
+            captureAndAnalyze().finally(() => {
+                captureBtn.disabled = false;
+            });
+        });
+        
+        // Cargar voces disponibles
+        if ('speechSynthesis' in window) {
+            speechSynthesis.onvoiceschanged = () => {
+                speechSynthesis.getVoices();
+            };
+        }
+        
+        // Prevenir que la pantalla se apague
+        if ('wakeLock' in navigator) {
+            navigator.wakeLock.request('screen').catch(() => {});
+        }
+        
+        // Inicializar
+        captureBtn.disabled = true;
+        updateStatus('📱 Listo. Presiona "Iniciar" para comenzar.');
+    </script>
+</body>
+</html>
